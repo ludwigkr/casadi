@@ -340,7 +340,7 @@ void Sqpmethod::set_sqpmethod_prob() {
     p_.nlp = &p_nlp_;
 }
 
-void Sqpmethod::set_work(void *mem, const double** &arg, double** &res,
+void Sqpmethod::set_work(void *mem, const double ** &arg, double ** &res,
                          casadi_int *&iw, double *&w) const {
     auto m = static_cast<SqpmethodMemory *>(mem);
 
@@ -364,6 +364,14 @@ int Sqpmethod::init_mem(void *mem) const {
     return 0;
 }
 
+void print_vector(char *name, double *vec, uint vec_len) {
+    printf("%s: [", name);
+    for (uint i = 0; i < vec_len - 1; i++) {
+        printf("%.3g ", vec[i]);
+    }
+    printf("%.3g", vec[vec_len - 1]);
+    printf("]\n");
+}
 int Sqpmethod::solve(void *mem) const {
     auto m = static_cast<SqpmethodMemory *>(mem);
     auto d_nlp = &m->d_nlp;
@@ -419,12 +427,17 @@ int Sqpmethod::solve(void *mem) const {
 
         // Primal infeasability
         double pr_inf = casadi_max_viol(nx_ + ng_, d_nlp->z, d_nlp->lbz, d_nlp->ubz);
+        printf("pr_inf: %f\n", pr_inf);
 
         // inf-norm of Lagrange gradient
         double du_inf = casadi_norm_inf(nx_, d->gLag);
+        printf("du_inf: %f\n", du_inf);
 
         // inf-norm of step
         double dx_norminf = casadi_norm_inf(nx_, d->dx);
+        printf("dx_inf: %f\n", dx_norminf);
+
+        print_vector("x", d_nlp->z, nx_);
 
         // Printing information about the actual iterate
         if (print_iteration_) {
@@ -520,6 +533,8 @@ int Sqpmethod::solve(void *mem) const {
         // Reset line-search counter, success marker
         ls_iter = 0;
         ls_success = true;
+
+        print_vector("dxopt", d->dx, nx_);
 
         // Line-search
         if (verbose_) print("Starting line-search\n");

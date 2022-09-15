@@ -24,6 +24,7 @@
 
 
 #include "qpoases_interface.hpp"
+#include <qpOASES/Options.hpp>
 
 // Bug in qpOASES?
 #define ALLOW_QPROBLEMB true
@@ -393,6 +394,44 @@ void QpoasesInterface::init(const Dict &opts) {
     alloc_w(nx_ + na_, true); // dual
 }
 
+void print_qpoptions(qpOASES::Options *options) {
+    printf("qpOases Options:\n");
+    printf("- enableRamping: %d\n", options->enableRamping);
+    printf("- enableFarBounds: %d\n", options->enableFarBounds);
+    printf("- enableFlippingBounds: %d\n", options->enableFlippingBounds);
+    printf("- enableRegularisation: %d\n", options->enableRegularisation);
+    printf("- enableFullLITests: %d\n", options->enableFullLITests);
+    printf("- enableNZCTests: %d\n", options->enableNZCTests);
+    printf("- enableDriftCorrection: %d\n", options->enableDriftCorrection);
+    printf("- enableCholeskyRefactorisation: %d\n", options->enableCholeskyRefactorisation);
+    printf("- enableEqualities: %d\n", options->enableEqualities);
+    printf("- terminationTolerance: %f\n", options->terminationTolerance);
+    printf("- boundTolerance: %f\n", options->boundTolerance);
+    printf("- boundRelaxation: %f\n", options->boundRelaxation);
+    printf("- epsNum: %f\n", options->epsNum);
+    printf("- epsDen: %f\n", options->epsDen);
+    printf("- maxPrimalJump: %f\n", options->maxPrimalJump);
+    printf("- maxDualJump: %f\n", options->maxDualJump);
+    printf("- initialRamping: %f\n", options->initialRamping);
+    printf("- finalRamping: %f\n", options->finalRamping);
+    printf("- initialFarBounds: %f\n", options->initialFarBounds);
+    printf("- growFarBounds: %f\n", options->growFarBounds);
+    printf("- initialStatusBounds: %d\n", options->initialStatusBounds);
+    printf("- epsFlipping: %f\n", options->epsFlipping);
+    printf("- numRegularisationSteps: %d\n", options->numRegularisationSteps);
+    printf("- epsRegularisation: %f\n", options->epsRegularisation);
+    printf("- numRefinementSteps: %d\n", options->numRefinementSteps);
+    printf("- epsIterRef: %f\n", options->epsIterRef);
+    printf("- epsLITests: %f\n", options->epsLITests);
+    printf("- epsNZCTests: %f\n", options->epsNZCTests);
+    printf("- rcondSMin: %f\n", options->rcondSMin);
+    printf("- enableInertiaCorrection: %d\n", options->enableInertiaCorrection);
+    printf("- enableDropInfeasibles: %d\n", options->enableDropInfeasibles);
+    printf("- dropBoundPriority: %d\n", options->dropBoundPriority);
+    printf("- dropEqConPriority: %d\n", options->dropEqConPriority);
+    printf("- dropIneqConPriority: %d\n", options->dropIneqConPriority);
+}
+
 int QpoasesInterface::init_mem(void *mem) const {
     if (Conic::init_mem(mem)) return 1;
     auto m = static_cast<QpoasesMemory *>(mem);
@@ -400,6 +439,7 @@ int QpoasesInterface::init_mem(void *mem) const {
 
     // Linear solver, if any
     m->linsol_plugin = linsol_plugin_;
+
 
     // Create qpOASES instance
     delete m->qp;
@@ -425,6 +465,24 @@ int QpoasesInterface::init_mem(void *mem) const {
 
     return 0;
 }
+
+void print_vector(char *name, double *vec, uint vec_len) {
+    printf("%s: [", name);
+    for (uint i = 0; i < vec_len - 1; i++) {
+        printf("%f, ", vec[i]);
+    }
+    printf("%.3g", vec[vec_len - 1]);
+    printf("]\n");
+}
+void print_matrix(char *name, double *mat, uint mat_len) {
+    printf("%s: ", name);
+    for (uint i = 0; i < mat_len; i++) {
+        if (abs(mat[i]) > 1e-5)
+            printf("%f(%d), ", mat[i], i);
+    }
+    printf("\n");
+}
+
 
 int QpoasesInterface::
 solve(const double **arg, double **res, casadi_int *iw, double *w, void *mem) const {
@@ -499,6 +557,16 @@ solve(const double **arg, double **res, casadi_int *iw, double *w, void *mem) co
         m->fstats.at("preprocessing").toc();
         m->fstats.at("solver").tic();
         // Solve dense
+
+        print_matrix("h", h, nx_ * nx_);
+        print_vector("g", g, nx_);
+        print_matrix("a", a, nx_ * na_);
+        print_vector("lb", lb, nx_);
+        print_vector("ub", ub, nx_);
+        print_vector("lbA", lbA, na_);
+        print_vector("ubA", ubA, na_);
+        printf("nwsr: %d\n", nWSR);
+
         if (na_ == 0) {
             if (m->called_once) {
                 // Broken?
@@ -509,6 +577,7 @@ solve(const double **arg, double **res, casadi_int *iw, double *w, void *mem) co
                 flag = m->qp->init(h, g, lb, ub, nWSR, cputime_ptr);
             }
         } else {
+            printf("called_once: %d\n", m->called_once);
             if (m->called_once) {
                 flag = m->sqp->hotstart(h, g, a, lb, ub, lbA, ubA, nWSR, cputime_ptr);
             } else {
@@ -517,6 +586,9 @@ solve(const double **arg, double **res, casadi_int *iw, double *w, void *mem) co
         }
         m->fstats.at("solver").toc();
     }
+
+    qpOASES::Options options = m->sqp->getOptions();
+    print_qpoptions(&options);
 
     // Solver is "warm" now
     m->called_once = true;
@@ -540,10 +612,13 @@ solve(const double **arg, double **res, casadi_int *iw, double *w, void *mem) co
     // Get the primal solution
     if (res[CONIC_X]) m->qp->getPrimalSolution(res[CONIC_X]);
 
+    print_vector("primal", res[CONIC_X], nx_);
+
     // Get the dual solution
     if (res[CONIC_LAM_X] || res[CONIC_LAM_A]) {
         double *dual = w; w += nx_ + na_;
         m->qp->getDualSolution(dual);
+        print_vector("dual", dual, nx_ + na_);
         casadi_scal(nx_ + na_, -1., dual);
         casadi_copy(dual, nx_, res[CONIC_LAM_X]);
         casadi_copy(dual + nx_, na_, res[CONIC_LAM_A]);
